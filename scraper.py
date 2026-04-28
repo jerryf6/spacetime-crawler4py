@@ -2,9 +2,11 @@ import re
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
 
+
 def scraper(url, resp):
     links = extract_next_links(url, resp)
     return [link for link in links if is_valid(link)]
+
 
 def extract_next_links(url, resp):
     # Implementation required.
@@ -16,7 +18,6 @@ def extract_next_links(url, resp):
     #         resp.raw_response.url: the url, again
     #         resp.raw_response.content: the content of the page!
     # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
-
     found_links = set()
     if resp.status == 200 and resp.raw_response and resp.raw_response.content:
         try:
@@ -30,25 +31,28 @@ def extract_next_links(url, resp):
 
     return list(found_links)
 
+
 def is_valid(url):
-    # Decide whether to crawl this url or not. 
+    # Decide whether to crawl this url or not.
     # If you decide to crawl it, return True; otherwise return False.
     # There are already some conditions that return False.
     try:
         parsed = urlparse(url)
-        allowed_domains = [
-            ".ics.uci.edu",
-            ".cs.uci.edu",
-            ".informatics.uci.edu",
-            ".stat.uci.edu"]
+        allowed_domains = ["ics.uci.edu", "cs.uci.edu", "informatics.uci.edu", "stat.uci.edu"]
+
         if parsed.scheme not in set(["http", "https"]):
             return False
-        allowed = False
-        for domain in allowed_domains:
-            if parsed.netloc.endswith(domain):
-                allowed = True
-        if allowed == False:
+
+        is_allowed_domain = any(parsed.netloc == d or parsed.netloc.endswith("." + d)
+                                for d in allowed_domains)
+
+        if not is_allowed_domain:
             return False
+
+        if re.match(r".*(calendar|date|event|gallery|zip|tar|gz|archive|wp-content).*", parsed.path.lower()) or \
+                re.match(r".*(calendar|date|event|gallery).*", parsed.query.lower()):
+            return False
+
         return not re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico"
             + r"|png|tiff?|mid|mp2|mp3|mp4"
@@ -60,5 +64,5 @@ def is_valid(url):
             + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower())
 
     except TypeError:
-        print ("TypeError for ", parsed)
+        print("TypeError for ", parsed)
         raise
