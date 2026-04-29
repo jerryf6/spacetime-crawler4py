@@ -49,10 +49,10 @@ def scraper(url, resp):
 
         with open("stats_report.txt", "w") as f:
             f.write(f"Unique Pages: {len(CRAWL_STATS['unique_urls'])}\n")
-            f.write(
-                f"Longest Page: {CRAWL_STATS['longest_page']['url']} ({CRAWL_STATS['longest_page']['word_count']} words)\n")
+            f.write(f"Longest Page: {CRAWL_STATS['longest_page']['url']} ({CRAWL_STATS['longest_page']['word_count']} words)\n")
             f.write(f"Top 50 Words: {CRAWL_STATS['word_frequencies'].most_common(50)}\n")
             f.write(f"Subdomains: {dict(sorted(CRAWL_STATS['subdomains'].items()))}\n")
+            f.flush()
 
     return valid_links
 
@@ -80,6 +80,11 @@ def is_valid(url):
         allowed_domains = ["ics.uci.edu", "cs.uci.edu", "informatics.uci.edu", "stat.uci.edu"]
         if not any(parsed.netloc == d or parsed.netloc.endswith("." + d) for d in allowed_domains):
             return False
+
+        # KILL DOKUWIKI INFINITE LOOPS
+        if "wiki.ics.uci.edu" in parsed.netloc:
+            if any(param in parsed.query for param in ["do=", "tab_details=", "tab_files=", "image="]):
+                return False
 
         if "archive.ics.uci.edu" in parsed.netloc:
             if "/datasets" in parsed.path or "search" in parsed.query or "Keywords" in parsed.query:
