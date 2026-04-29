@@ -1,23 +1,63 @@
 import re
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
+from collections import Counter
+
+CRAWL_STATS = {
+    "unique_urls": set(),
+    "longest_page": {"url": "", "word_count": 0},
+    "word_frequencies": Counter(),
+    "subdomains": Counter()
+}
+
+STOP_WORDS = set(
+    ["a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "as", "at", "be",
+     "because", "been", "before", "being", "below", "between", "both", "but", "by", "can", "did", "do", "does", "doing",
+     "don", "down", "during", "each", "few", "for", "from", "further", "had", "has", "have", "having", "here", "how",
+     "if", "in", "into", "is", "it", "its", "itself", "just", "me", "more", "most", "my", "myself", "no", "nor", "not",
+     "now", "of", "off", "on", "once", "only", "or", "other", "our", "ours", "ourselves", "out", "over", "own", "s",
+     "same", "she", "should", "so", "some", "such", "t", "than", "that", "the", "their", "theirs", "them", "themselves",
+     "then", "there", "these", "they", "this", "those", "through", "to", "too", "under", "until", "up", "very", "was",
+     "we", "were", "what", "when", "where", "which", "while", "who", "whom", "why", "will", "with", "you", "your",
+     "yours", "yourself", "yourselves"])
 
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
-    return [link for link in links if is_valid(link)]
+    valid_links = [link for link in links if is_valid(link)]
+
+    if resp.status == 200 and resp.raw_response:
+        content = resp.raw_response.content
+        soup = BeautifulSoup(content, "lxml")
+
+        text = soup.get_text(separator=' ', strip=True).lower()
+        words = re.findall(r'[a-zA-Z0-9]{3,}', text)
+
+        word_count = len(words)
+        if word_count > CRAWL_STATS["longest_page"]["word_count"]:
+            CRAWL_STATS["longest_page"] = {"url": url, "word_count": word_count}
+
+        meaningful_words = [w for w in words if w not in STOP_WORDS]
+        CRAWL_STATS["word_frequencies"].update(meaningful_words)
+
+        parsed = urlparse(url)
+        if parsed.netloc.endswith(".ics.uci.edu") and parsed.netloc != "ics.uci.edu":
+            if url not in CRAWL_STATS["unique_urls"]:
+                CRAWL_STATS["subdomains"][parsed.netloc] += 1
+
+        CRAWL_STATS["unique_urls"].add(url)
+
+        with open("stats_report.txt", "w") as f:
+            f.write(f"Unique Pages: {len(CRAWL_STATS['unique_urls'])}\n")
+            f.write(
+                f"Longest Page: {CRAWL_STATS['longest_page']['url']} ({CRAWL_STATS['longest_page']['word_count']} words)\n")
+            f.write(f"Top 50 Words: {CRAWL_STATS['word_frequencies'].most_common(50)}\n")
+            f.write(f"Subdomains: {dict(sorted(CRAWL_STATS['subdomains'].items()))}\n")
+
+    return valid_links
 
 
 def extract_next_links(url, resp):
-    # Implementation required.
-    # url: the URL that was used to get the page
-    # resp.url: the actual url of the page
-    # resp.status: the status code returned by the server. 200 is OK, you got the page. Other numbers mean that there was some kind of problem.
-    # resp.error: when status is not 200, you can check the error here, if needed.
-    # resp.raw_response: this is where the page actually is. More specifically, the raw_response has two parts:
-    #         resp.raw_response.url: the url, again
-    #         resp.raw_response.content: the content of the page!
-    # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
     found_links = set()
     if resp.status == 200 and resp.raw_response and resp.raw_response.content:
         try:
@@ -27,30 +67,26 @@ def extract_next_links(url, resp):
                 clean_url = href.split('#')[0]
                 found_links.add(clean_url)
         except Exception as e:
-            print(e)
-
+            pass
     return list(found_links)
 
 
 def is_valid(url):
-    # Decide whether to crawl this url or not.
-    # If you decide to crawl it, return True; otherwise return False.
-    # There are already some conditions that return False.
     try:
         parsed = urlparse(url)
+        if parsed.scheme not in ["http", "https"]:
+            return False
+
         allowed_domains = ["ics.uci.edu", "cs.uci.edu", "informatics.uci.edu", "stat.uci.edu"]
-
-        if parsed.scheme not in set(["http", "https"]):
+        if not any(parsed.netloc == d or parsed.netloc.endswith("." + d) for d in allowed_domains):
             return False
 
-        is_allowed_domain = any(parsed.netloc == d or parsed.netloc.endswith("." + d)
-                                for d in allowed_domains)
+        if "archive.ics.uci.edu" in parsed.netloc:
+            if "/datasets" in parsed.path or "search" in parsed.query or "Keywords" in parsed.query:
+                return False
 
-        if not is_allowed_domain:
-            return False
-
-        if re.match(r".*(calendar|date|event|gallery|zip|tar|gz|archive|wp-content).*", parsed.path.lower()) or \
-                re.match(r".*(calendar|date|event|gallery).*", parsed.query.lower()):
+        trap_pattern = r".*(calendar|date|event|gallery|wp-content|login|share|action=).*"
+        if re.match(trap_pattern, parsed.path.lower()) or re.match(trap_pattern, parsed.query.lower()):
             return False
 
         return not re.match(
@@ -62,7 +98,5 @@ def is_valid(url):
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv"
             + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower())
-
     except TypeError:
-        print("TypeError for ", parsed)
-        raise
+        return False
