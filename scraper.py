@@ -89,7 +89,7 @@ def is_valid(url):
             return False
 
         if "doku.php" in parsed.path.lower():
-            if "do=" in parsed.query.lower() or "rev=" in parsed.query.lower():
+            if any(p in parsed.query.lower() for p in ["do=", "rev=", "idx="]):
                 return False
 
         if "archive.ics.uci.edu" in parsed.netloc:
