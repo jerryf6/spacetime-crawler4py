@@ -88,8 +88,8 @@ def is_valid(url):
         if not any(parsed.netloc == d or parsed.netloc.endswith("." + d) for d in allowed_domains):
             return False
 
-        if "wiki.ics.uci.edu" in parsed.netloc:
-            if any(param in parsed.query for param in ["do=", "tab_details=", "tab_files=", "image="]):
+        if "doku.php" in parsed.path.lower():
+            if "do=" in parsed.query.lower() or "rev=" in parsed.query.lower():
                 return False
 
         if "archive.ics.uci.edu" in parsed.netloc:
