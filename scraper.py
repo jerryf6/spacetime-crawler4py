@@ -28,36 +28,42 @@ def scraper(url, resp):
     valid_links = [link for link in links if is_valid(link)]
 
     if resp.status == 200 and resp.raw_response:
-        content = resp.raw_response.content
-        soup = BeautifulSoup(content, "lxml")
-
-        text = soup.get_text(separator=' ', strip=True).lower()
-        words = re.findall(r'[a-zA-Z0-9]{3,}', text)
-
-        word_count = len(words)
-        if word_count > CRAWL_STATS["longest_page"]["word_count"]:
-            CRAWL_STATS["longest_page"] = {"url": url, "word_count": word_count}
-
-        meaningful_words = [w for w in words if w not in STOP_WORDS]
-        CRAWL_STATS["word_frequencies"].update(meaningful_words)
-
-        parsed = urlparse(url)
-        allowed_subdomains = ["ics.uci.edu", "cs.uci.edu", "informatics.uci.edu", "stat.uci.edu"]
-
-        if any(parsed.netloc == d or parsed.netloc.endswith("." + d) for d in allowed_subdomains):
-            if url not in CRAWL_STATS["unique_urls"]:
-                CRAWL_STATS["subdomains"][parsed.netloc] += 1
-
-        CRAWL_STATS["unique_urls"].add(url)
+        ctype = resp.raw_response.headers.get('Content-Type', '').lower()
+        if 'text/html' not in ctype:
+            return valid_links
 
         try:
+            content = resp.raw_response.content
+            soup = BeautifulSoup(content, "lxml")
+            text = soup.get_text(separator=' ', strip=True).lower()
+            words = re.findall(r'[a-zA-Z0-9]{3,}', text)
+
+            word_count = len(words)
+            if word_count < 20:
+                return valid_links
+
+            if word_count > CRAWL_STATS["longest_page"]["word_count"]:
+                CRAWL_STATS["longest_page"] = {"url": url, "word_count": word_count}
+
+            meaningful_words = [w for w in words if w not in STOP_WORDS]
+            CRAWL_STATS["word_frequencies"].update(meaningful_words)
+
+            parsed = urlparse(url)
+            allowed_subdomains = ["ics.uci.edu", "cs.uci.edu", "informatics.uci.edu", "stat.uci.edu"]
+
+            if url not in CRAWL_STATS["unique_urls"]:
+                if any(parsed.netloc == d or parsed.netloc.endswith("." + d) for d in allowed_subdomains):
+                    CRAWL_STATS["subdomains"][parsed.netloc] += 1
+
+            CRAWL_STATS["unique_urls"].add(url)
+
             with open("stats_report.txt", "w") as f:
                 f.write(f"Unique Pages: {len(CRAWL_STATS['unique_urls'])}\n")
                 f.write(
                     f"Longest Page: {CRAWL_STATS['longest_page']['url']} ({CRAWL_STATS['longest_page']['word_count']} words)\n")
                 f.write(f"Top 50 Words: {CRAWL_STATS['word_frequencies'].most_common(50)}\n")
-                f.write(f"Subdomains (uci.edu): {dict(sorted(CRAWL_STATS['subdomains'].items()))}\n")
-                f.flush()
+                f.write(f"Subdomains: {dict(sorted(CRAWL_STATS['subdomains'].items()))}\n")
+
         except Exception:
             pass
 
@@ -71,7 +77,7 @@ def extract_next_links(url, resp):
             soup = BeautifulSoup(resp.raw_response.content, "lxml")
             for link in soup.find_all('a', href=True):
                 href = urljoin(resp.url, link['href'])
-                clean_url = href.split('#')[0]
+                clean_url = href.split('#')[0].rstrip('/')
                 found_links.add(clean_url)
         except Exception:
             pass
@@ -92,6 +98,12 @@ def is_valid(url):
             if any(p in parsed.query.lower() for p in ["do=", "rev=", "idx="]):
                 return False
 
+        bad_subdomains = ["cdb.ics", "chemdb", "proteomics", "deeprxn"]
+        if any(sub in parsed.netloc.lower() for sub in bad_subdomains):
+            return False
+        if "smiles" in parsed.path.lower():
+            return False
+
         if "archive.ics.uci.edu" in parsed.netloc:
             if "/datasets" in parsed.path or "search" in parsed.query or "Keywords" in parsed.query:
                 return False
@@ -109,5 +121,6 @@ def is_valid(url):
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv"
             + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower())
+
     except TypeError:
         return False
