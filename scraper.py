@@ -10,16 +10,17 @@ CRAWL_STATS = {
     "subdomains": Counter()
 }
 
-STOP_WORDS = set(
-    ["a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "as", "at", "be",
-     "because", "been", "before", "being", "below", "between", "both", "but", "by", "can", "did", "do", "does", "doing",
-     "don", "down", "during", "each", "few", "for", "from", "further", "had", "has", "have", "having", "here", "how",
-     "if", "in", "into", "is", "it", "its", "itself", "just", "me", "more", "most", "my", "myself", "no", "nor", "not",
-     "now", "of", "off", "on", "once", "only", "or", "other", "our", "ours", "ourselves", "out", "over", "own", "s",
-     "same", "she", "should", "so", "some", "such", "t", "than", "that", "the", "their", "theirs", "them", "themselves",
-     "then", "there", "these", "they", "this", "those", "through", "to", "too", "under", "until", "up", "very", "was",
-     "we", "were", "what", "when", "where", "which", "while", "who", "whom", "why", "will", "with", "you", "your",
-     "yours", "yourself", "yourselves"])
+STOP_WORDS = set([
+    "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "as", "at", "be",
+    "because", "been", "before", "being", "below", "between", "both", "but", "by", "can", "did", "do", "does", "doing",
+    "don", "down", "during", "each", "few", "for", "from", "further", "had", "has", "have", "having", "here", "how",
+    "if", "in", "into", "is", "it", "its", "itself", "just", "me", "more", "most", "my", "myself", "no", "nor", "not",
+    "now", "of", "off", "on", "once", "only", "or", "other", "our", "ours", "ourselves", "out", "over", "own", "s",
+    "same", "she", "should", "so", "some", "such", "t", "than", "that", "the", "their", "theirs", "them", "themselves",
+    "then", "there", "these", "they", "this", "those", "through", "to", "too", "under", "until", "up", "very", "was",
+    "we", "were", "what", "when", "where", "which", "while", "who", "whom", "why", "will", "with", "you", "your",
+    "yours", "yourself", "yourselves"
+])
 
 
 def scraper(url, resp):
@@ -41,18 +42,24 @@ def scraper(url, resp):
         CRAWL_STATS["word_frequencies"].update(meaningful_words)
 
         parsed = urlparse(url)
-        if parsed.netloc.endswith(".ics.uci.edu") and parsed.netloc != "ics.uci.edu":
+        allowed_subdomains = ["ics.uci.edu", "cs.uci.edu", "informatics.uci.edu", "stat.uci.edu"]
+
+        if any(parsed.netloc == d or parsed.netloc.endswith("." + d) for d in allowed_subdomains):
             if url not in CRAWL_STATS["unique_urls"]:
                 CRAWL_STATS["subdomains"][parsed.netloc] += 1
 
         CRAWL_STATS["unique_urls"].add(url)
 
-        with open("stats_report.txt", "w") as f:
-            f.write(f"Unique Pages: {len(CRAWL_STATS['unique_urls'])}\n")
-            f.write(f"Longest Page: {CRAWL_STATS['longest_page']['url']} ({CRAWL_STATS['longest_page']['word_count']} words)\n")
-            f.write(f"Top 50 Words: {CRAWL_STATS['word_frequencies'].most_common(50)}\n")
-            f.write(f"Subdomains: {dict(sorted(CRAWL_STATS['subdomains'].items()))}\n")
-            f.flush()
+        try:
+            with open("stats_report.txt", "w") as f:
+                f.write(f"Unique Pages: {len(CRAWL_STATS['unique_urls'])}\n")
+                f.write(
+                    f"Longest Page: {CRAWL_STATS['longest_page']['url']} ({CRAWL_STATS['longest_page']['word_count']} words)\n")
+                f.write(f"Top 50 Words: {CRAWL_STATS['word_frequencies'].most_common(50)}\n")
+                f.write(f"Subdomains (uci.edu): {dict(sorted(CRAWL_STATS['subdomains'].items()))}\n")
+                f.flush()
+        except Exception:
+            pass
 
     return valid_links
 
@@ -66,7 +73,7 @@ def extract_next_links(url, resp):
                 href = urljoin(resp.url, link['href'])
                 clean_url = href.split('#')[0]
                 found_links.add(clean_url)
-        except Exception as e:
+        except Exception:
             pass
     return list(found_links)
 
@@ -81,7 +88,6 @@ def is_valid(url):
         if not any(parsed.netloc == d or parsed.netloc.endswith("." + d) for d in allowed_domains):
             return False
 
-        # KILL DOKUWIKI INFINITE LOOPS
         if "wiki.ics.uci.edu" in parsed.netloc:
             if any(param in parsed.query for param in ["do=", "tab_details=", "tab_files=", "image="]):
                 return False
